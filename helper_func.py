@@ -3,9 +3,10 @@
 import base64
 import re
 import asyncio
+import logging 
 from pyrogram import filters
 from pyrogram.enums import ChatMemberStatus
-from config import FORCE_SUB_CHANNEL, ADMINS
+from config import FORCE_SUB_CHANNEL, ADMINS, AUTO_DELETE_TIME, AUTO_DEL_SUCCESS_MSG, PREMIUM_CHANNEL
 from pyrogram.errors.exceptions.bad_request_400 import UserNotParticipant
 from pyrogram.errors import FloodWait
 
@@ -24,6 +25,21 @@ async def is_subscribed(filter, client, update):
         return False
     else:
         return True
+
+async def is_premium_subscribed(client, user_id):
+    """Checks if user_id is a member of PREMIUM_CHANNEL. Admins always pass."""
+    if user_id in ADMINS:
+        return True
+    if not PREMIUM_CHANNEL:
+        return False
+    try:
+        member = await client.get_chat_member(chat_id=PREMIUM_CHANNEL, user_id=user_id)
+    except UserNotParticipant:
+        return False
+    except Exception:
+        return False
+
+    return member.status in [ChatMemberStatus.OWNER, ChatMemberStatus.ADMINISTRATOR, ChatMemberStatus.MEMBER]
 
 async def encode(string):
     string_bytes = string.encode("ascii")
@@ -84,7 +100,6 @@ async def get_message_id(client, message):
     else:
         return 0
 
-
 def get_readable_time(seconds: int) -> str:
     count = 0
     up_time = ""
@@ -105,6 +120,17 @@ def get_readable_time(seconds: int) -> str:
     time_list.reverse()
     up_time += ":".join(time_list)
     return up_time
+
+async def delete_file(messages, client, process):
+    await asyncio.sleep(AUTO_DELETE_TIME)
+    for msg in messages:
+        try:
+            await client.delete_messages(chat_id=msg.chat.id, message_ids=[msg.id])
+        except Exception as e:
+            await asyncio.sleep(e.x)
+            print(f"The attempt to delete the media {msg.id} was unsuccessful: {e}")
+
+    await process.edit_text(AUTO_DEL_SUCCESS_MSG)
 
 
 subscribed = filters.create(is_subscribed)
