@@ -15,6 +15,9 @@ from pyrogram.errors import FloodWait
 _revoke_client = motor.motor_asyncio.AsyncIOMotorClient(DB_URI)
 _revoked_links_col = _revoke_client[DB_NAME].revoked_links
 
+# ---- Premium channel, connected via /connectpremium instead of an env var ----
+_settings_col = _revoke_client[DB_NAME].bot_settings
+
 async def is_subscribed(filter, client, update):
     if not FORCE_SUB_CHANNEL:
         return True
@@ -31,14 +34,29 @@ async def is_subscribed(filter, client, update):
     else:
         return True
 
+async def get_premium_channel():
+    """Returns the chat_id connected via /connectpremium, or None if not set yet."""
+    doc = await _settings_col.find_one({"_id": "premium_channel"})
+    return doc["chat_id"] if doc else None
+
+async def set_premium_channel(chat_id: int, title: str = ""):
+    await _settings_col.update_one(
+        {"_id": "premium_channel"},
+        {"$set": {"chat_id": chat_id, "title": title}},
+        upsert=True
+    )
+
 async def is_premium_subscribed(client, user_id):
-    """Checks if user_id is a member of PREMIUM_CHANNEL. Admins always pass."""
+    """Checks if user_id is a member of the connected premium channel. Admins always pass."""
     if user_id in ADMINS:
         return True
-    if not PREMIUM_CHANNEL:
+    premium_channel = await get_premium_channel()
+    if not premium_channel:
+        premium_channel = PREMIUM_CHANNEL  # fallback for anyone still using the env var
+    if not premium_channel:
         return False
     try:
-        member = await client.get_chat_member(chat_id=PREMIUM_CHANNEL, user_id=user_id)
+        member = await client.get_chat_member(chat_id=premium_channel, user_id=user_id)
     except UserNotParticipant:
         return False
     except Exception:
