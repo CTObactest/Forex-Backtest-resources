@@ -4,11 +4,16 @@ import base64
 import re
 import asyncio
 import logging 
+import motor.motor_asyncio
 from pyrogram import filters
 from pyrogram.enums import ChatMemberStatus
-from config import FORCE_SUB_CHANNEL, ADMINS, AUTO_DELETE_TIME, AUTO_DEL_SUCCESS_MSG, PREMIUM_CHANNEL
+from config import FORCE_SUB_CHANNEL, ADMINS, AUTO_DELETE_TIME, AUTO_DEL_SUCCESS_MSG, PREMIUM_CHANNEL, DB_URI, DB_NAME
 from pyrogram.errors.exceptions.bad_request_400 import UserNotParticipant
 from pyrogram.errors import FloodWait
+
+# ---- Link revocation store (separate collection, own client) ----
+_revoke_client = motor.motor_asyncio.AsyncIOMotorClient(DB_URI)
+_revoked_links_col = _revoke_client[DB_NAME].revoked_links
 
 async def is_subscribed(filter, client, update):
     if not FORCE_SUB_CHANNEL:
@@ -127,10 +132,37 @@ async def delete_file(messages, client, process):
         try:
             await client.delete_messages(chat_id=msg.chat.id, message_ids=[msg.id])
         except Exception as e:
-            await asyncio.sleep(e.x)
             print(f"The attempt to delete the media {msg.id} was unsuccessful: {e}")
 
     await process.edit_text(AUTO_DEL_SUCCESS_MSG)
+
+
+def extract_code_from_link(text: str) -> str:
+    """
+    Accepts either a bare code (what comes after ?start=) or a full
+    https://t.me/botusername?start=CODE share link, and returns just the code.
+    """
+    text = text.strip()
+    if "start=" in text:
+        text = text.split("start=", 1)[1]
+    return text.split("&")[0].strip()
+
+async def revoke_link(code: str):
+    """Mark a generated link's code as revoked so it can no longer be opened."""
+    await _revoked_links_col.update_one(
+        {"code": code},
+        {"$set": {"code": code}},
+        upsert=True
+    )
+
+async def unrevoke_link(code: str) -> bool:
+    """Un-revoke a previously revoked code. Returns True if it was revoked."""
+    result = await _revoked_links_col.delete_one({"code": code})
+    return result.deleted_count > 0
+
+async def is_link_revoked(code: str) -> bool:
+    doc = await _revoked_links_col.find_one({"code": code})
+    return doc is not None
 
 
 subscribed = filters.create(is_subscribed)
