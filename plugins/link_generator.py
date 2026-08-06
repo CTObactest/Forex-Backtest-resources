@@ -4,7 +4,7 @@ from pyrogram import Client, filters
 from pyrogram.types import Message, InlineKeyboardMarkup, InlineKeyboardButton
 from bot import Bot
 from config import ADMINS
-from helper_func import encode, get_message_id
+from helper_func import encode, get_message_id, revoke_link, unrevoke_link, extract_code_from_link
 
 @Bot.on_message(filters.private & filters.user(ADMINS) & filters.command('batch'))
 async def batch(client: Client, message: Message):
@@ -119,3 +119,43 @@ async def premium_link_generator(client: Client, message: Message):
     link = f"https://t.me/{client.username}?start={base64_string}"
     reply_markup = InlineKeyboardMarkup([[InlineKeyboardButton("🔁 Share URL", url=f'https://telegram.me/share/url?url={link}')]])
     await channel_message.reply_text(f"<b>🔒 Here is your PREMIUM link</b>\n\n{link}\n\nAnyone opening this who isn't in the premium group will be denied and asked to join.", quote=True, reply_markup=reply_markup)
+
+
+#=====================================================================================##
+#                              LINK REVOCATION
+# /revoke <link_or_code>   -> disables a previously generated link (get- or premium-)
+# /unrevoke <link_or_code> -> restores it
+# Accepts either the full https://t.me/bot?start=CODE link or just the CODE itself.
+#=====================================================================================##
+
+@Bot.on_message(filters.private & filters.user(ADMINS) & filters.command('revoke'))
+async def revoke_command(client: Client, message: Message):
+    if len(message.command) < 2:
+        await message.reply_text(
+            "<b>Usage:</b> <code>/revoke <link_or_code></code>\n\nSend the full share link, or just the code after <code>?start=</code>.",
+            quote=True
+        )
+        return
+    arg = message.text.split(None, 1)[1]
+    code = extract_code_from_link(arg)
+    await revoke_link(code)
+    await message.reply_text(
+        f"🔒 <b>Link revoked.</b> It can no longer be used to access files.\n\nCode: <code>{code}</code>",
+        quote=True
+    )
+
+@Bot.on_message(filters.private & filters.user(ADMINS) & filters.command('unrevoke'))
+async def unrevoke_command(client: Client, message: Message):
+    if len(message.command) < 2:
+        await message.reply_text(
+            "<b>Usage:</b> <code>/unrevoke <link_or_code></code>\n\nSend the full share link, or just the code after <code>?start=</code>.",
+            quote=True
+        )
+        return
+    arg = message.text.split(None, 1)[1]
+    code = extract_code_from_link(arg)
+    was_revoked = await unrevoke_link(code)
+    if was_revoked:
+        await message.reply_text(f"✅ <b>Link restored.</b>\n\nCode: <code>{code}</code>", quote=True)
+    else:
+        await message.reply_text("That code wasn't revoked.", quote=True)
