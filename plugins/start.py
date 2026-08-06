@@ -9,7 +9,7 @@ from pyrogram.errors import FloodWait, UserIsBlocked, InputUserDeactivated
 
 from bot import Bot
 from config import ADMINS, FORCE_MSG, START_MSG, CUSTOM_CAPTION, DISABLE_CHANNEL_BUTTON, PROTECT_CONTENT, START_PIC, AUTO_DELETE_TIME, AUTO_DELETE_MSG, JOIN_REQUEST_ENABLE,FORCE_SUB_CHANNEL, PREMIUM_MSG, PREMIUM_JOIN_LINK
-from helper_func import subscribed,decode, get_messages, delete_file, is_premium_subscribed
+from helper_func import subscribed,decode, get_messages, delete_file, is_premium_subscribed, is_link_revoked
 from database.database import add_user, del_user, full_userbase, present_user
 
 
@@ -27,6 +27,14 @@ async def start_command(client: Client, message: Message):
             base64_string = text.split(" ", 1)[1]
         except:
             return
+
+        if await is_link_revoked(base64_string):
+            await message.reply_text(
+                "❌ <b>This link has been revoked</b> and can no longer be used to access files.",
+                quote=True
+            )
+            return
+
         string = await decode(base64_string)
         argument = string.split("-")
 
@@ -282,4 +290,3 @@ Unsuccessful: <code>{unsuccessful}</code></b>"""
         msg = await message.reply(REPLY_ERROR)
         await asyncio.sleep(8)
         await msg.delete()
-
