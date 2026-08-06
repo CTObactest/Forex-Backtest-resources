@@ -58,3 +58,64 @@ async def link_generator(client: Client, message: Message):
     link = f"https://t.me/{client.username}?start={base64_string}"
     reply_markup = InlineKeyboardMarkup([[InlineKeyboardButton("🔁 Share URL", url=f'https://telegram.me/share/url?url={link}')]])
     await channel_message.reply_text(f"<b>Here is your link</b>\n\n{link}", quote=True, reply_markup=reply_markup)
+
+
+#=====================================================================================##
+#                              PREMIUM LINKS
+# Same as /batch and /genlink above, but the generated link is tagged "premium-"
+# instead of "get-". Anyone who opens a premium link (even shared publicly outside
+# the premium group) will be checked for PREMIUM_CHANNEL membership in start.py
+# before the file is delivered.
+#=====================================================================================##
+
+@Bot.on_message(filters.private & filters.user(ADMINS) & filters.command('premiumbatch'))
+async def premium_batch(client: Client, message: Message):
+    while True:
+        try:
+            first_message = await client.ask(text = "Forward the First Message from DB Channel (with Quotes) for this PREMIUM set..\n\nor Send the DB Channel Post Link", chat_id = message.from_user.id, filters=(filters.forwarded | (filters.text & ~filters.forwarded)), timeout=60)
+        except:
+            return
+        f_msg_id = await get_message_id(client, first_message)
+        if f_msg_id:
+            break
+        else:
+            await first_message.reply("❌ Error\n\nthis Forwarded Post is not from my DB Channel or this Link is taken from DB Channel", quote = True)
+            continue
+
+    while True:
+        try:
+            second_message = await client.ask(text = "Forward the Last Message from DB Channel (with Quotes)..\nor Send the DB Channel Post link", chat_id = message.from_user.id, filters=(filters.forwarded | (filters.text & ~filters.forwarded)), timeout=60)
+        except:
+            return
+        s_msg_id = await get_message_id(client, second_message)
+        if s_msg_id:
+            break
+        else:
+            await second_message.reply("❌ Error\n\nthis Forwarded Post is not from my DB Channel or this Link is taken from DB Channel", quote = True)
+            continue
+
+    string = f"premium-{f_msg_id * abs(client.db_channel.id)}-{s_msg_id * abs(client.db_channel.id)}"
+    base64_string = await encode(string)
+    link = f"https://t.me/{client.username}?start={base64_string}"
+    reply_markup = InlineKeyboardMarkup([[InlineKeyboardButton("🔁 Share URL", url=f'https://telegram.me/share/url?url={link}')]])
+    await second_message.reply_text(f"<b>🔒 Here is your PREMIUM link</b>\n\n{link}\n\nAnyone opening this who isn't in the premium group will be denied and asked to join.", quote=True, reply_markup=reply_markup)
+
+
+@Bot.on_message(filters.private & filters.user(ADMINS) & filters.command('premiumgenlink'))
+async def premium_link_generator(client: Client, message: Message):
+    while True:
+        try:
+            channel_message = await client.ask(text = "Forward Message from the DB Channel (with Quotes) for this PREMIUM file..\nor Send the DB Channel Post link", chat_id = message.from_user.id, filters=(filters.forwarded | (filters.text & ~filters.forwarded)), timeout=60)
+        except:
+            return
+        msg_id = await get_message_id(client, channel_message)
+        if msg_id:
+            break
+        else:
+            await channel_message.reply("❌ Error\n\nthis Forwarded Post is not from my DB Channel or this Link is not taken from DB Channel", quote = True)
+            continue
+
+    base64_string = await encode(f"premium-{msg_id * abs(client.db_channel.id)}")
+    link = f"https://t.me/{client.username}?start={base64_string}"
+    reply_markup = InlineKeyboardMarkup([[InlineKeyboardButton("🔁 Share URL", url=f'https://telegram.me/share/url?url={link}')]])
+    await channel_message.reply_text(f"<b>🔒 Here is your PREMIUM link</b>\n\n{link}\n\nAnyone opening this who isn't in the premium group will be denied and asked to join.", quote=True, reply_markup=reply_markup)
