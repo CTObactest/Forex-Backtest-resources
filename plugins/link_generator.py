@@ -2,9 +2,10 @@
 
 from pyrogram import Client, filters
 from pyrogram.types import Message, InlineKeyboardMarkup, InlineKeyboardButton
+from pyrogram.enums import ChatMemberStatus
 from bot import Bot
-from config import ADMINS
-from helper_func import encode, get_message_id, revoke_link, unrevoke_link, extract_code_from_link
+from config import ADMINS, PREMIUM_CHANNEL
+from helper_func import encode, get_message_id, revoke_link, unrevoke_link, extract_code_from_link, get_premium_channel, set_premium_channel
 
 @Bot.on_message(filters.private & filters.user(ADMINS) & filters.command('batch'))
 async def batch(client: Client, message: Message):
@@ -159,3 +160,75 @@ async def unrevoke_command(client: Client, message: Message):
         await message.reply_text(f"✅ <b>Link restored.</b>\n\nCode: <code>{code}</code>", quote=True)
     else:
         await message.reply_text("That code wasn't revoked.", quote=True)
+
+
+#=====================================================================================##
+#                              PREMIUM CHANNEL CONNECTION
+# /connectpremium -> captures the private premium channel's chat ID by forward, verifies
+#                     the bot is an admin there, and stores it in MongoDB. No invite link
+#                     is generated — access is managed by you (paid channel), PREMIUM_JOIN_LINK
+#                     just points people to your join/payment instructions post.
+# /premiumstatus  -> shows which channel is currently connected.
+#=====================================================================================##
+
+@Bot.on_message(filters.private & filters.user(ADMINS) & filters.command('connectpremium'))
+async def connect_premium(client: Client, message: Message):
+    try:
+        fwd = await client.ask(
+            text="Forward any message from your Premium channel/group (with Quotes)..\n\nMake sure the bot has already been added there as admin.",
+            chat_id=message.from_user.id,
+            filters=filters.forwarded,
+            timeout=60
+        )
+    except:
+        return
+
+    if not fwd.forward_from_chat:
+        await message.reply_text(
+            "❌ That wasn't a forwarded channel/group message (or the sender chose to hide it). Run /connectpremium again.",
+            quote=True
+        )
+        return
+
+    chat = fwd.forward_from_chat
+    try:
+        member = await client.get_chat_member(chat.id, "me")
+    except Exception as e:
+        await message.reply_text(
+            f"❌ I couldn't check my membership there: <code>{e}</code>\n\nMake sure the bot has been added to that channel/group as admin first, then run /connectpremium again.",
+            quote=True
+        )
+        return
+
+    if member.status not in [ChatMemberStatus.OWNER, ChatMemberStatus.ADMINISTRATOR]:
+        await message.reply_text(
+            "❌ I'm in that chat, but not as admin. Promote the bot to admin there, then run /connectpremium again.",
+            quote=True
+        )
+        return
+
+    await set_premium_channel(chat.id, chat.title or str(chat.id))
+    await message.reply_text(
+        f"✅ <b>Premium channel connected.</b>\n\nName: {chat.title or 'N/A'}\nID: <code>{chat.id}</code>\n\nPremium-tagged links will now check membership here.",
+        quote=True
+    )
+
+@Bot.on_message(filters.private & filters.user(ADMINS) & filters.command('premiumstatus'))
+async def premium_status(client: Client, message: Message):
+    chat_id = await get_premium_channel()
+    if not chat_id:
+        await message.reply_text(
+            f"No premium channel connected yet — run /connectpremium.\n\n"
+            f"(Currently falling back to the PREMIUM_CHANNEL env var: <code>{PREMIUM_CHANNEL or 'not set'}</code>)",
+            quote=True
+        )
+        return
+    try:
+        chat = await client.get_chat(chat_id)
+        title = chat.title or "N/A"
+    except Exception:
+        title = "N/A (couldn't fetch chat info)"
+    await message.reply_text(
+        f"🔒 <b>Connected premium channel</b>\n\nName: {title}\nID: <code>{chat_id}</code>",
+        quote=True
+    )
