@@ -1,18 +1,3 @@
-#(©)CodeXBotz
-
-import os
-import asyncio
-from pyrogram import Client, filters
-from pyrogram.enums import ParseMode
-from pyrogram.types import Message, InlineKeyboardMarkup, InlineKeyboardButton
-from pyrogram.errors import FloodWait, UserIsBlocked, InputUserDeactivated
-
-from bot import Bot
-from config import ADMINS, FORCE_MSG, START_MSG, CUSTOM_CAPTION, DISABLE_CHANNEL_BUTTON, PROTECT_CONTENT, START_PIC, AUTO_DELETE_TIME, AUTO_DELETE_MSG, JOIN_REQUEST_ENABLE,FORCE_SUB_CHANNEL, PREMIUM_MSG, PREMIUM_JOIN_LINK
-from helper_func import subscribed,decode, get_messages, delete_file, is_premium_subscribed, is_link_revoked
-from database.database import add_user, del_user, full_userbase, present_user
-
-
 @Bot.on_message(filters.command('start') & filters.private & subscribed)
 async def start_command(client: Client, message: Message):
     id = message.from_user.id
@@ -35,13 +20,20 @@ async def start_command(client: Client, message: Message):
             )
             return
 
+        # ---- SECURITY CHECK ----
         string = await decode(base64_string)
+        
+        # If decode returns None, the signature failed (link was tampered with or is invalid)
+        if string is None:
+            await message.reply_text(
+                "❌ <b>Invalid or tampered link.</b>\n\nFor security reasons, this request has been denied.",
+                quote=True
+            )
+            return
+
         argument = string.split("-")
 
         # PREMIUM LINK CHECK
-        # Links generated via /premiumgenlink or /premiumbatch are tagged "premium-...".
-        # Even if such a link gets shared publicly, anyone opening it who is not a
-        # member of the premium group/channel is denied and asked to join.
         if argument[0] == "premium":
             if not await is_premium_subscribed(client, id):
                 buttons = [
@@ -156,7 +148,7 @@ async def start_command(client: Client, message: Message):
                 ]
             ]
         )
-        if START_PIC:  # Check if START_PIC has a value
+        if START_PIC: 
             await message.reply_photo(
                 photo=START_PIC,
                 caption=START_MSG.format(
@@ -169,7 +161,7 @@ async def start_command(client: Client, message: Message):
                 reply_markup=reply_markup,
                 quote=True
             )
-        else:  # If START_PIC is empty, send only the text
+        else: 
             await message.reply_text(
                 text=START_MSG.format(
                     first=message.from_user.first_name,
@@ -183,110 +175,3 @@ async def start_command(client: Client, message: Message):
                 quote=True
             )
         return
-
-    
-#=====================================================================================##
-
-WAIT_MSG = """"<b>Processing ...</b>"""
-
-REPLY_ERROR = """<code>Use this command as a replay to any telegram message with out any spaces.</code>"""
-
-#=====================================================================================##
-
-
-@Bot.on_message(filters.command('start') & filters.private)
-async def not_joined(client: Client, message: Message):
-
-    if bool(JOIN_REQUEST_ENABLE):
-        invite = await client.create_chat_invite_link(
-            chat_id=FORCE_SUB_CHANNEL,
-            creates_join_request=True
-        )
-        ButtonUrl = invite.invite_link
-    else:
-        ButtonUrl = client.invitelink
-
-    buttons = [
-        [
-            InlineKeyboardButton(
-                "Join Channel",
-                url = ButtonUrl)
-        ]
-    ]
-
-    try:
-        buttons.append(
-            [
-                InlineKeyboardButton(
-                    text = 'Try Again',
-                    url = f"https://t.me/{client.username}?start={message.command[1]}"
-                )
-            ]
-        )
-    except IndexError:
-        pass
-
-    await message.reply(
-        text = FORCE_MSG.format(
-                first = message.from_user.first_name,
-                last = message.from_user.last_name,
-                username = None if not message.from_user.username else '@' + message.from_user.username,
-                mention = message.from_user.mention,
-                id = message.from_user.id
-            ),
-        reply_markup = InlineKeyboardMarkup(buttons),
-        quote = True,
-        disable_web_page_preview = True
-    )
-
-@Bot.on_message(filters.command('users') & filters.private & filters.user(ADMINS))
-async def get_users(client: Bot, message: Message):
-    msg = await client.send_message(chat_id=message.chat.id, text=WAIT_MSG)
-    users = await full_userbase()
-    await msg.edit(f"{len(users)} users are using this bot")
-
-@Bot.on_message(filters.private & filters.command('broadcast') & filters.user(ADMINS))
-async def send_text(client: Bot, message: Message):
-    if message.reply_to_message:
-        query = await full_userbase()
-        broadcast_msg = message.reply_to_message
-        total = 0
-        successful = 0
-        blocked = 0
-        deleted = 0
-        unsuccessful = 0
-        
-        pls_wait = await message.reply("<i>Broadcasting Message.. This will Take Some Time</i>")
-        for chat_id in query:
-            try:
-                await broadcast_msg.copy(chat_id)
-                successful += 1
-            except FloodWait as e:
-                await asyncio.sleep(e.x)
-                await broadcast_msg.copy(chat_id)
-                successful += 1
-            except UserIsBlocked:
-                await del_user(chat_id)
-                blocked += 1
-            except InputUserDeactivated:
-                await del_user(chat_id)
-                deleted += 1
-            except:
-                unsuccessful += 1
-                pass
-            total += 1
-        
-        status = f"""<b><u>Broadcast Completed</u>
-
-Total Users: <code>{total}</code>
-Successful: <code>{successful}</code>
-Blocked Users: <code>{blocked}</code>
-Deleted Accounts: <code>{deleted}</code>
-Unsuccessful: <code>{unsuccessful}</code></b>"""
-        
-        return await pls_wait.edit(status)
-
-    else:
-        msg = await message.reply(REPLY_ERROR)
-        await asyncio.sleep(8)
-        await msg.delete()
