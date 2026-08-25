@@ -33,8 +33,8 @@ async def batch(client: Client, message: Message):
             await second_message.reply("❌ Error\n\nthis Forwarded Post is not from my DB Channel or this Link is taken from DB Channel", quote = True)
             continue
 
-
-    string = f"get-{f_msg_id * abs(client.db_channel.id)}-{s_msg_id * abs(client.db_channel.id)}"
+    # REMOVED MULTIPLICATION OBFUSCATION
+    string = f"get-{f_msg_id}-{s_msg_id}"
     base64_string = await encode(string)
     link = f"https://t.me/{client.username}?start={base64_string}"
     reply_markup = InlineKeyboardMarkup([[InlineKeyboardButton("🔁 Share URL", url=f'https://telegram.me/share/url?url={link}')]])
@@ -55,19 +55,12 @@ async def link_generator(client: Client, message: Message):
             await channel_message.reply("❌ Error\n\nthis Forwarded Post is not from my DB Channel or this Link is not taken from DB Channel", quote = True)
             continue
 
-    base64_string = await encode(f"get-{msg_id * abs(client.db_channel.id)}")
+    # REMOVED MULTIPLICATION OBFUSCATION
+    base64_string = await encode(f"get-{msg_id}")
     link = f"https://t.me/{client.username}?start={base64_string}"
     reply_markup = InlineKeyboardMarkup([[InlineKeyboardButton("🔁 Share URL", url=f'https://telegram.me/share/url?url={link}')]])
     await channel_message.reply_text(f"<b>Here is your link</b>\n\n{link}", quote=True, reply_markup=reply_markup)
 
-
-#=====================================================================================##
-#                              PREMIUM LINKS
-# Same as /batch and /genlink above, but the generated link is tagged "premium-"
-# instead of "get-". Anyone who opens a premium link (even shared publicly outside
-# the premium group) will be checked for PREMIUM_CHANNEL membership in start.py
-# before the file is delivered.
-#=====================================================================================##
 
 @Bot.on_message(filters.private & filters.user(ADMINS) & filters.command('premiumbatch'))
 async def premium_batch(client: Client, message: Message):
@@ -95,7 +88,8 @@ async def premium_batch(client: Client, message: Message):
             await second_message.reply("❌ Error\n\nthis Forwarded Post is not from my DB Channel or this Link is taken from DB Channel", quote = True)
             continue
 
-    string = f"premium-{f_msg_id * abs(client.db_channel.id)}-{s_msg_id * abs(client.db_channel.id)}"
+    # REMOVED MULTIPLICATION OBFUSCATION
+    string = f"premium-{f_msg_id}-{s_msg_id}"
     base64_string = await encode(string)
     link = f"https://t.me/{client.username}?start={base64_string}"
     reply_markup = InlineKeyboardMarkup([[InlineKeyboardButton("🔁 Share URL", url=f'https://telegram.me/share/url?url={link}')]])
@@ -116,18 +110,12 @@ async def premium_link_generator(client: Client, message: Message):
             await channel_message.reply("❌ Error\n\nthis Forwarded Post is not from my DB Channel or this Link is not taken from DB Channel", quote = True)
             continue
 
-    base64_string = await encode(f"premium-{msg_id * abs(client.db_channel.id)}")
+    # REMOVED MULTIPLICATION OBFUSCATION
+    base64_string = await encode(f"premium-{msg_id}")
     link = f"https://t.me/{client.username}?start={base64_string}"
     reply_markup = InlineKeyboardMarkup([[InlineKeyboardButton("🔁 Share URL", url=f'https://telegram.me/share/url?url={link}')]])
     await channel_message.reply_text(f"<b>🔒 Here is your PREMIUM link</b>\n\n{link}\n\nAnyone opening this who isn't in the premium group will be denied and asked to join.", quote=True, reply_markup=reply_markup)
 
-
-#=====================================================================================##
-#                              LINK REVOCATION
-# /revoke <link_or_code>   -> disables a previously generated link (get- or premium-)
-# /unrevoke <link_or_code> -> restores it
-# Accepts either the full https://t.me/bot?start=CODE link or just the CODE itself.
-#=====================================================================================##
 
 @Bot.on_message(filters.private & filters.user(ADMINS) & filters.command('revoke'))
 async def revoke_command(client: Client, message: Message):
@@ -161,15 +149,6 @@ async def unrevoke_command(client: Client, message: Message):
     else:
         await message.reply_text("That code wasn't revoked.", quote=True)
 
-
-#=====================================================================================##
-#                              PREMIUM CHANNEL CONNECTION
-# /connectpremium -> captures the private premium channel's chat ID by forward, verifies
-#                     the bot is an admin there, and stores it in MongoDB. No invite link
-#                     is generated — access is managed by you (paid channel), PREMIUM_JOIN_LINK
-#                     just points people to your join/payment instructions post.
-# /premiumstatus  -> shows which channel is currently connected.
-#=====================================================================================##
 
 @Bot.on_message(filters.private & filters.user(ADMINS) & filters.command('connectpremium'))
 async def connect_premium(client: Client, message: Message):
