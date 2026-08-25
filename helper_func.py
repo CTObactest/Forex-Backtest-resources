@@ -5,11 +5,18 @@ import re
 import asyncio
 import logging 
 import motor.motor_asyncio
+import hmac
+import hashlib
 from pyrogram import filters
 from pyrogram.enums import ChatMemberStatus
 from config import FORCE_SUB_CHANNEL, ADMINS, AUTO_DELETE_TIME, AUTO_DEL_SUCCESS_MSG, PREMIUM_CHANNEL, DB_URI, DB_NAME
 from pyrogram.errors.exceptions.bad_request_400 import UserNotParticipant
 from pyrogram.errors import FloodWait
+
+# ---- ADD YOUR SECRET KEY HERE ----
+# This key is used to sign your links. Keep it secret and never change it 
+# once set, or all previously generated signed links will become invalid.
+SECRET_HMAC_KEY = b"REPLACE_THIS_WITH_A_LONG_RANDOM_SECURE_STRING"
 
 # ---- Link revocation store (separate collection, own client) ----
 _revoke_client = motor.motor_asyncio.AsyncIOMotorClient(DB_URI)
@@ -64,18 +71,57 @@ async def is_premium_subscribed(client, user_id):
 
     return member.status in [ChatMemberStatus.OWNER, ChatMemberStatus.ADMINISTRATOR, ChatMemberStatus.MEMBER]
 
+
+# ---- NEW SECURITY FUNCTIONS ----
+def generate_signature(payload: str) -> str:
+    """Generates a secure HMAC-SHA256 signature for the given payload."""
+    signature = hmac.new(
+        SECRET_HMAC_KEY, 
+        payload.encode('utf-8'), 
+        hashlib.sha256
+    ).hexdigest()
+    return signature[:10]  # Only need 10 chars for URL brevity
+
 async def encode(string):
-    string_bytes = string.encode("ascii")
+    """Signs the string payload and encodes it."""
+    # 1. Generate a signature for the string (e.g. "premium-12345")
+    signature = generate_signature(string)
+    # 2. Append the signature to the string
+    signed_payload = f"{string}-{signature}"
+    
+    string_bytes = signed_payload.encode("ascii")
     base64_bytes = base64.urlsafe_b64encode(string_bytes)
     base64_string = (base64_bytes.decode("ascii")).strip("=")
     return base64_string
 
 async def decode(base64_string):
-    base64_string = base64_string.strip("=") # links generated before this commit will be having = sign, hence striping them to handle padding errors.
+    """Decodes the string, verifies the signature, and returns the payload if valid."""
+    base64_string = base64_string.strip("=") 
     base64_bytes = (base64_string + "=" * (-len(base64_string) % 4)).encode("ascii")
-    string_bytes = base64.urlsafe_b64decode(base64_bytes) 
-    string = string_bytes.decode("ascii")
-    return string
+    
+    try:
+        string_bytes = base64.urlsafe_b64decode(base64_bytes) 
+        decoded_string = string_bytes.decode("ascii")
+    except Exception:
+        return None # Invalid Base64 format
+        
+    # Split the payload from the signature (splitting from the right)
+    parts = decoded_string.rsplit('-', 1)
+    
+    if len(parts) != 2:
+        return None # Format is wrong (likely an old, unsigned link or tampered link)
+        
+    payload, provided_signature = parts
+    
+    # Recalculate what the signature SHOULD be
+    expected_signature = generate_signature(payload)
+    
+    # Check if they match perfectly
+    if hmac.compare_digest(expected_signature, provided_signature):
+        return payload
+    else:
+        return None # Signature mismatch - TAMPERING DETECTED!
+
 
 async def get_messages(client, message_ids):
     messages = []
@@ -156,17 +202,12 @@ async def delete_file(messages, client, process):
 
 
 def extract_code_from_link(text: str) -> str:
-    """
-    Accepts either a bare code (what comes after ?start=) or a full
-    https://t.me/botusername?start=CODE share link, and returns just the code.
-    """
     text = text.strip()
     if "start=" in text:
         text = text.split("start=", 1)[1]
     return text.split("&")[0].strip()
 
 async def revoke_link(code: str):
-    """Mark a generated link's code as revoked so it can no longer be opened."""
     await _revoked_links_col.update_one(
         {"code": code},
         {"$set": {"code": code}},
@@ -174,13 +215,11 @@ async def revoke_link(code: str):
     )
 
 async def unrevoke_link(code: str) -> bool:
-    """Un-revoke a previously revoked code. Returns True if it was revoked."""
     result = await _revoked_links_col.delete_one({"code": code})
     return result.deleted_count > 0
 
 async def is_link_revoked(code: str) -> bool:
     doc = await _revoked_links_col.find_one({"code": code})
     return doc is not None
-
 
 subscribed = filters.create(is_subscribed)
