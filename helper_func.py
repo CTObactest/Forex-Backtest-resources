@@ -16,8 +16,7 @@ from pyrogram.errors import FloodWait
 # ---- ADD YOUR SECRET KEY HERE ----
 # This key is used to sign your links. Keep it secret and never change it 
 # once set, or all previously generated signed links will become invalid.
-SECRET_HMAC_KEY = b"REPLACE_THIS_WITH_A_LONG_RANDOM_SECURE_STRING"
-
+SECRET_HMAC_KEY = b"vL4fm1UTikroX2CpwhQ_ocOJ9reejizMKzNRU8UpHWLebxxHiPGTCALusylLGJbrxVjQ-9s-dyyMU3b8m_JRYA"
 # ---- Link revocation store (separate collection, own client) ----
 _revoke_client = motor.motor_asyncio.AsyncIOMotorClient(DB_URI)
 _revoked_links_col = _revoke_client[DB_NAME].revoked_links
